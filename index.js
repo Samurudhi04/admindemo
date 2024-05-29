@@ -96,9 +96,9 @@ app.get('/orderlist.html', (req, res) => {
 })
 
 app.get('/orderList', (req, res) => {
-  // if (!req.session.isLoggedIn) {
-  //   return res.status(401).send('Unauthorized page it isssssssssssss');
-  // }
+  if (!req.session.isLoggedIn) {
+    return res.status(401).send('Unauthorized page it isssssssssssss');
+  }
 
   const sql = `
     SELECT o.id, o.orderDate, p.productName, o.name, o.email, o.phone, o.quantity, o.comments 
