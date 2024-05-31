@@ -3,24 +3,40 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
 const mysql = require('mysql');
-//const cookieParser = require('cookie-parser');
-const SQLiteStore = require('connect-sqlite3')(session);
 const path = require('path');
+const cookieParser = require('cookie-parser');
 const app = express();
 const port = 5000;
 
-app.use(cors());
+const corsOptions = {
+  origin: 'http://127.0.0.1:5501',
+  credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-
+app.use(cookieParser());
 app.use(session({
-  store: new SQLiteStore(),
-  secret: 'your_secret_key',
-  resave: false,
+  secret: "mysecretKey",
   saveUninitialized: false,
-  //cookie: { secure: true }
-  cookie: { maxAge: 24 * 60 * 60 * 1000 } // 1 day
+  resave: false,
+  cookie: {
+    httpOnly: true,
+    secure: false, // Set to true if using HTTPS
+    sameSite: 'lax' // Adjust sameSite attribute as needed
+  }
 }));
+// app.use(session({
+//   secret: "mysecretKey",
+//     saveUninitialized: true,
+//     resave: true
+// }));
+// app.use((req, res, next) => {
+//   res.header('Access-Control-Allow-Origin', 'http://127.0.0.1:5501');
+//   res.header('Access-Control-Allow-Credentials', 'true');
+//   next();
+// });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -39,67 +55,35 @@ connection.connect(function (error) {
   }
 });
 
-// // Middleware to check if user is authenticated
-// function isAuthenticated(req, res, next) {
-//   console.log('Checking authentication:', req.session.isAuthenticated);
-//   if (req.session.isAuthenticated) {
-//     next();
-//   } else {
-//     console.log('User not authenticated. Redirecting to login.');
-//     res.redirect('/admin.html');
-//   }
-// }
+const user = {
+  username: "Admin"
+};
 
-
-// Login endpoint
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   if (username === 'Admin' && password === '1234') {
-    req.session.isLoggedIn = true;
-    res.json({ data: 'Login successful' });
-    // res.redirect('/orderlist.html');
-  }else if (username !== 'Admin' && password !== '1234') {
-    res.status(401).send('Username and password are incorrect');
-  } else if (username !== 'Admin') {
-    res.status(401).send('Please enter correct username');
-  } else if (password !== '1234') {
-    res.status(401).send('Please enter correct password');
+    req.session.user = user;
+    req.session.save();
+    //res.send("Your are logged in");
+    res.json({ success: true })
   }
-
+  else {
+    res.send('Invalid username or password');
+  }
 });
 
-// Logout endpoint
-app.get('/logout', (req, res) => {
-  req.session.destroy(err => {
-    if (err) {
-      return res.status(500).send('Could not log out.');
-    } else {
-      res.redirect('/admin.html');  // Ensure this matches your file name
-    }
-  });
-});
-
-// app.get('/orderlist.html', (req, res) => {
-//   //res.sendFile(path.join(__dirname, 'public', 'orderlist.html'));
-//   if (req.session.isLoggedIn) {
-//     alert("inside session")
-//     next();
-//   } else {
-//     res.redirect('/login.html');
-//   }
-// });
-
-app.get('/orderlist.html', (req, res) => {
-  if (req.session.isLoggedIn) {
-    return res.status(401).send('Unauthorized page it isssssssssssss');
+function isAuthenticated(req, res, next) {
+  if (req.session && req.session.user && req.session.user.username === 'Admin') {
+    return next();
+  } else {
+    //res.redirect('admin.html')
+    res.status(401).send('You are not authorized to view this page. Please log in.');
   }
-})
+}
 
-app.get('/orderList', (req, res) => {
-  if (!req.session.isLoggedIn) {
-    return res.status(401).send('Unauthorized page it isssssssssssss');
-  }
 
+app.get('/orderList', isAuthenticated, (req, res) => {
+  //res.send(req.session.user);
   const sql = `
     SELECT o.id, o.orderDate, p.productName, o.name, o.email, o.phone, o.quantity, o.comments 
     FROM orders o INNER JOIN productMaster p ON o.productId = p.id ORDER BY o.id DESC;`;
@@ -109,48 +93,86 @@ app.get('/orderList', (req, res) => {
       console.error("Error fetching orders:", err);
       res.status(500).send("Error fetching orders");
     } else {
-      console.log('Query result:', result); 
+      console.log('Query result:', result);
       res.json(result);
     }
   });
 });
 
 
-app.get('/getProductsList',  (req, res) => {
-  const sql = "SELECT id, productName FROM productMaster WHERE isDisable = 0";
-  connection.query(sql, (err, results) => {
+// Logout endpoint
+app.get('/logout', (req, res) => {
+  req.session.destroy(err => {
     if (err) {
-      console.error("Error fetching product list:", err);
-      res.status(500).send("Error fetching product list");
+      return res.status(500).send('Could not log out.');
     } else {
-      res.json(results);
+      res.redirect('/admin.html');
     }
   });
 });
 
-app.post('/submitForm', (req, res) => {
-  const { productId, name, email, phone, quantity, comments } = req.body;
-  const insertQuery = "INSERT INTO orders (productId, name, email, phone, quantity, comments) VALUES (?, ?, ?, ?, ?, ?)";
-  connection.query(insertQuery, [productId, name, email, phone, quantity, comments], (err, result) => {
-    if (err) {
-      console.error("Error inserting data:", err);
-      res.status(500).send("Error inserting data");
-    } else {
-      console.log("1 record inserted");
-      res.sendStatus(200);
-      const productQuery = "SELECT productName FROM productMaster WHERE id = ?";
-      connection.query(productQuery, [productId], (err, result) => {
-        if (err) {
-          console.error("Error fetching product name:", err);
-          res.status(500).send("Error fetching product name");
-        } else {
-          const productName = result[0].productName;
-          sendEmails(name, email, phone, productName, quantity, comments);
-        }
-      });
-    }
-  });
-});
+
+// app.post('/login', (req, res) => {
+//   const { username, password } = req.body;
+
+//   if (username === 'Admin' && password === '1234') {
+//       req.session.isLoggedIn = true;
+//       req.session.username = username;
+//       res.json({ success: true });
+//      // res.redirect('/orderlist');
+//   } else {
+//       res.send('Invalid username or password');
+//   }
+
+// const { username, password } = req.body;
+
+// if (username === 'Admin' && password === '1234') {
+//   req.session.isLoggedIn = true;
+//   res.json({ success: true });
+// }
+// else if (username !== 'Admin' && password !== '1234') {
+//   res.status(401).send('Username and password are incorrect');
+// }
+// else if (username !== 'Admin') {
+//   res.status(401).send('Please enter correct username');
+// }
+// else if (password !== '1234') {
+//   res.status(401).send('Please enter correct password');
+// }
+// // else {
+// //     res.json({ success: false });
+// // }
+//});
+
+
+// app.get('/isloggedin', (req, res) => {
+//   res.json({ isLoggedIn: req.session.isLoggedIn || false });
+// });
+
+// // Login endpoint
+// app.post('/login', (req, res) => {
+//   const { username, password } = req.body;
+//   if (username === 'Admin' && password === '1234') {
+//     req.session.isLoggedIn = true;
+//     res.json({ data: 'Login successful' });
+//     // res.redirect('/orderlist.html');
+//   }else if (username !== 'Admin' && password !== '1234') {
+//     res.status(401).send('Username and password are incorrect');
+//   } else if (username !== 'Admin') {
+//     res.status(401).send('Please enter correct username');
+//   } else if (password !== '1234') {
+//     res.status(401).send('Please enter correct password');
+//   }
+//});
+
+// // Middleware to protect the order list route
+// function authMiddleware(req, res, next) {
+//   if (req.session.isLoggedIn && req.session.username === 'Admin') {
+//       next();
+//   } else {
+//       res.redirect('/login');
+//   }
+// }
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
