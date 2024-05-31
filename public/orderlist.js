@@ -41,7 +41,6 @@ $(document).ready(function() {
 });
 
 
-
 // $(document).ready(function() {
 //     $.ajax({
 //           url: 'http://localhost:5000/orderList',
